@@ -20,6 +20,9 @@ namespace POS.Client.Models
         public bool IsActive { get; set; }
         public DateTime LastUpdated { get; set; }
 
+        [NotMapped]
+        public bool HasModifiers { get; set; }
+
         public List<LocalProductVariant> Variants { get; set; } = new List<LocalProductVariant>();
         public List<LocalProductModifier> Modifiers { get; set; } = new List<LocalProductModifier>();
     }
@@ -149,6 +152,7 @@ public class LocalProductVariant
         public decimal UnitPrice { get; set; }
         public decimal TotalPrice { get; set; }
         public decimal DiscountAmount { get; set; }
+        public string ProductName { get; set; } = string.Empty;  // <-- AGGIUNGI
         public List<LocalSaleItemModifier> Modifiers { get; set; } = new List<LocalSaleItemModifier>();
     }
 

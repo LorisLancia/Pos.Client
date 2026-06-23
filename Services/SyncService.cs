@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
 using POS.Client.Data;
 using POS.Client.Models;
 using System;
@@ -156,6 +157,13 @@ namespace POS.Client.Services
         public List<LocalModifierOption> GetModifierOptions(int groupId)
         {
             return _db.ModifierOptions.Where(o => o.GroupId == groupId && o.IsActive).ToList();
+        }
+        public LocalModifierGroup GetModifierGroup(int groupId)
+        {
+            using var db = new POSDbContext();
+            return db.ModifierGroups
+                .Include(g => g.Options)
+                .FirstOrDefault(g => g.ServerId == groupId);
         }
     }
 }
