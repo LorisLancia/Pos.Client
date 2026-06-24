@@ -81,6 +81,7 @@ namespace POS.Client.Models
     {
         [Key]
         public int ServerId { get; set; }
+        // public int LocalId { get; set; }
         public int ProductId { get; set; }
         public string Name { get; set; }
         public int MaxQuantity { get; set; } // 0 = illimitato

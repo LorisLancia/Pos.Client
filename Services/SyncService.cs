@@ -25,7 +25,7 @@ namespace POS.Client.Services
             var products = await _apiService.GetProductsForPOSAsync(storeId);
             var inventory = await _apiService.GetInventoryForPOSAsync(1);
 
-            // Clear old data (inclusi addon)
+            // Clear old data
             _db.ProductAddonItems.RemoveRange(_db.ProductAddonItems);
             _db.ProductAddons.RemoveRange(_db.ProductAddons);
             _db.ProductVariants.RemoveRange(_db.ProductVariants);
@@ -109,7 +109,7 @@ namespace POS.Client.Services
                     }
                 }
 
-                // ==================== ADDON (NUOVO) ====================
+                // ADDON - FIX CRITICO: usa localAddon.LocalId per gli items
                 foreach (var addon in p.Addons ?? new List<AddonResponse>())
                 {
                     var localAddon = new LocalProductAddon
@@ -123,20 +123,20 @@ namespace POS.Client.Services
                         CreatedAt = addon.CreatedAt
                     };
                     _db.ProductAddons.Add(localAddon);
-                    _db.SaveChanges();
+                    _db.SaveChanges(); // Per ottenere localAddon.LocalId
 
                     foreach (var item in addon.Items ?? new List<AddonItemResponse>())
-                    {
-                        _db.ProductAddonItems.Add(new LocalProductAddonItem
-                        {
-                            ServerId = item.Id,
-                            AddonId = addon.Id,
-                            AddonProductId = item.AddonProductId,
-                            QuantityValue = item.QuantityValue,
-                            SortOrder = item.SortOrder,
-                            IsActive = item.IsActive
-                        });
-                    }
+{
+    _db.ProductAddonItems.Add(new LocalProductAddonItem
+    {
+        ServerId = item.Id,
+        AddonId = localAddon.ServerId,  // <-- FIX: era localAddon.LocalId!
+        AddonProductId = item.AddonProductId,
+        QuantityValue = item.QuantityValue,
+        SortOrder = item.SortOrder,
+        IsActive = item.IsActive
+    });
+}
                 }
             }
 
@@ -158,7 +158,7 @@ namespace POS.Client.Services
                         ServerId = inv.MaterialId,
                         StoreId = storeId,
                         Name = inv.Material?.Name ?? "Unknown",
-                        Unit = inv.Material?.Unit ?? "piece",
+                        Unit = inv.Material?.Unit?.Symbol ?? "piece",
                         IsActive = true
                     });
                 }
@@ -167,10 +167,17 @@ namespace POS.Client.Services
             _db.SaveChanges();
         }
 
-        public List<LocalProduct> GetProducts()
-        {
-            return _db.Products.Where(p => p.IsActive).ToList();
-        }
+        // FIX: Include Addons e Items
+      public List<LocalProduct> GetProducts()
+{
+    using var db = new POSDbContext();  // <-- NUOVO contesto
+    return db.Products
+        .AsNoTracking()
+        .Where(p => p.IsActive)
+        .Include(p => p.Addons)
+        .ThenInclude(a => a.Items)
+        .ToList();
+}
 
         public List<LocalProductVariant> GetVariants(int productId)
         {
@@ -202,7 +209,6 @@ namespace POS.Client.Services
                 .FirstOrDefault(g => g.ServerId == groupId);
         }
 
-        // ==================== ADDON (NUOVO) ====================
         public List<LocalProductAddon> GetAddons(int productId)
         {
             return _db.ProductAddons
@@ -226,6 +232,15 @@ namespace POS.Client.Services
                 .Where(i => i.AddonId == addonId && i.IsActive)
                 .OrderBy(i => i.SortOrder)
                 .ToList();
+        }
+
+        public LocalProduct GetProductWithAddons(int productId)
+        {
+            using var db = new POSDbContext();
+            return db.Products
+                .Include(p => p.Addons)
+                .ThenInclude(a => a.Items)
+                .FirstOrDefault(p => p.ServerId == productId);
         }
     }
 }

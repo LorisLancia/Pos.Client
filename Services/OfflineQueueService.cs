@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿// Services/OfflineQueueService.cs
+using Newtonsoft.Json;
 using POS.Client.Data;
 using POS.Client.Models;
 using System;
@@ -48,6 +49,12 @@ namespace POS.Client.Services
                     mod.LocalSaleItemId = item.LocalId;
                     db.SaleItemModifiers.Add(mod);
                 }
+
+                foreach (var addon in item.Addons)
+                {
+                    addon.LocalSaleItemId = item.LocalId;
+                    db.SaleItemAddons.Add(addon);
+                }
             }
 
             foreach (var payment in payments)
@@ -57,7 +64,7 @@ namespace POS.Client.Services
             }
 
             db.SaveChanges();
-            Log($">>> QueueSale: LocalId={sale.LocalId} saved");
+            Log($">>> QueueSale: LocalId={sale.LocalId} saved with {items.Sum(i => i.Addons?.Count ?? 0)} addons");
             return sale.LocalId;
         }
 
@@ -111,6 +118,16 @@ namespace POS.Client.Services
                                 {
                                     modifierOptionId = m.ModifierOptionId,
                                     quantity = m.Quantity
+                                }).ToList(),
+                            addons = db.SaleItemAddons
+                                .Where(a => a.LocalSaleItemId == i.LocalId)
+                                .Select(a => new
+                                {
+                                    addonProductId = a.AddonProductId,
+                                    quantity = a.Quantity,
+                                    quantityValue = a.QuantityValue,
+                                    unitPrice = a.UnitPrice,
+                                    totalPrice = a.TotalPrice
                                 }).ToList()
                         }).ToList(),
                         payments = payments.Select(p => new
@@ -135,14 +152,12 @@ namespace POS.Client.Services
                         continue;
                     }
 
-                    // SUCCESSO! Aggiorna con nuovo DbContext per forzare il refresh
                     sale.Status = "synced";
                     sale.ServerId = result.Id;
                     sale.SaleNumber = result.SaleNumber;
                     sale.SyncedAt = DateTime.Now;
                     db.SaveChanges();
 
-                    // VERIFICA che sia stato salvato
                     var verify = db.Sales.Find(sale.LocalId);
                     Log($">>> Verify after save: Status={verify?.Status}, ServerId={verify?.ServerId}");
 

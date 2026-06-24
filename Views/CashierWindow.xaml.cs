@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Views/CashierWindow.xaml.cs
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -19,6 +20,7 @@ namespace POS.Client.Views
         private decimal _tax = 0;
         private decimal _total = 0;
         private LocalProduct _selectedProduct = null;
+        private List<SelectedAddon> _pendingAddons = null;
 
         public CashierWindow()
         {
@@ -61,10 +63,10 @@ namespace POS.Client.Views
         private void LoadProducts()
         {
             var products = _syncService.GetProducts();
-            // Set HasModifiers flag for UI
             foreach (var p in products)
             {
                 p.HasModifiers = p.Modifiers != null && p.Modifiers.Count > 0;
+                p.HasAddons = p.Addons != null && p.Addons.Count > 0;
             }
             icProducts.ItemsSource = products;
         }
@@ -79,23 +81,63 @@ namespace POS.Client.Views
             if (product == null) return;
 
             _selectedProduct = product;
+            _pendingAddons = null;
 
-            // PRIORITY 1: Check for MODIFIERS first
+            // PRIORITY 1: Check for ADDONS first
+            if (product.Addons != null && product.Addons.Count > 0)
+            {
+                var addonWindow = new AddonSelectionWindow(product.Addons.First(), _syncService);
+                if (addonWindow.ShowDialog() != true) return; // User cancelled
+
+                _pendingAddons = addonWindow.SelectedAddons;
+
+                // Check for modifiers after addon
+                if (product.Modifiers != null && product.Modifiers.Count > 0)
+                {
+                    var optionWindow = new ProductOptionWindow(product, product.BasePrice, _syncService);
+                    if (optionWindow.ShowDialog() == true)
+                    {
+                        AddToCart(product.ServerId, null, product.Name, product.BasePrice, product.TaxRate, 
+                            optionWindow.SelectedModifiers, _pendingAddons);
+                    }
+                    _pendingAddons = null;
+                    return;
+                }
+
+                // Check for variants after addon
+                var variants = _syncService.GetVariants(product.ServerId);
+                if (variants.Count > 0)
+                {
+                    cbVariants.ItemsSource = variants;
+                    cbVariants.Tag = product;
+                    cbVariants.Visibility = Visibility.Visible;
+                    return; // _pendingAddons stays set, used in cbVariants_SelectionChanged
+                }
+
+                // No modifiers/variants, add with addons
+                AddToCart(product.ServerId, null, product.Name, product.BasePrice, product.TaxRate, 
+                    null, _pendingAddons);
+                _pendingAddons = null;
+                return;
+            }
+
+            // PRIORITY 2: Check for MODIFIERS
             if (product.Modifiers != null && product.Modifiers.Count > 0)
             {
                 var optionWindow = new ProductOptionWindow(product, product.BasePrice, _syncService);
                 if (optionWindow.ShowDialog() == true)
                 {
-                    AddToCart(product.ServerId, null, product.Name, product.BasePrice, product.TaxRate, optionWindow.SelectedModifiers);
+                    AddToCart(product.ServerId, null, product.Name, product.BasePrice, product.TaxRate, 
+                        optionWindow.SelectedModifiers, null);
                 }
                 return;
             }
 
-            // PRIORITY 2: Check for VARIANTS
-            var variants = _syncService.GetVariants(product.ServerId);
-            if (variants.Count > 0)
+            // PRIORITY 3: Check for VARIANTS
+            var variants2 = _syncService.GetVariants(product.ServerId);
+            if (variants2.Count > 0)
             {
-                cbVariants.ItemsSource = variants;
+                cbVariants.ItemsSource = variants2;
                 cbVariants.Tag = product;
                 cbVariants.Visibility = Visibility.Visible;
                 return;
@@ -112,29 +154,36 @@ namespace POS.Client.Views
             if (variant == null || _selectedProduct == null) return;
 
             var price = _selectedProduct.BasePrice + variant.PriceAdjustment;
+            var preselectedAddons = _pendingAddons;
+            _pendingAddons = null;
 
-            // Check for modifiers on variant selection too
+            // Check for modifiers on variant selection
             if (_selectedProduct.Modifiers != null && _selectedProduct.Modifiers.Count > 0)
             {
                 var optionWindow = new ProductOptionWindow(_selectedProduct, price, _syncService);
                 if (optionWindow.ShowDialog() == true)
                 {
                     AddToCart(_selectedProduct.ServerId, variant.ServerId,
-                        $"{_selectedProduct.Name} ({variant.Name})", price, _selectedProduct.TaxRate, optionWindow.SelectedModifiers);
+                        $"{_selectedProduct.Name} ({variant.Name})", price, _selectedProduct.TaxRate, 
+                        optionWindow.SelectedModifiers, preselectedAddons);
                 }
                 cbVariants.SelectedItem = null;
                 cbVariants.Visibility = Visibility.Collapsed;
+                cbVariants.Tag = null;
                 return;
             }
 
             AddToCart(_selectedProduct.ServerId, variant.ServerId,
-                $"{_selectedProduct.Name} ({variant.Name})", price, _selectedProduct.TaxRate);
+                $"{_selectedProduct.Name} ({variant.Name})", price, _selectedProduct.TaxRate, 
+                null, preselectedAddons);
             cbVariants.SelectedItem = null;
             cbVariants.Visibility = Visibility.Collapsed;
+            cbVariants.Tag = null;
         }
 
         // ==================== ADD TO CART ====================
-        private void AddToCart(int productId, int? variantId, string name, decimal price, decimal taxRate, List<SelectedModifier> modifiers = null)
+        private void AddToCart(int productId, int? variantId, string name, decimal price, decimal taxRate, 
+            List<SelectedModifier> modifiers = null, List<SelectedAddon> addons = null)
         {
             _cart.Add(new CartItem
             {
@@ -143,7 +192,8 @@ namespace POS.Client.Views
                 Name = name,
                 Price = price,
                 TaxRate = taxRate,
-                Modifiers = modifiers ?? new List<SelectedModifier>()
+                Modifiers = modifiers ?? new List<SelectedModifier>(),
+                Addons = addons ?? new List<SelectedAddon>()
             });
             UpdateCartDisplay();
         }
@@ -158,10 +208,17 @@ namespace POS.Client.Views
             foreach (var item in _cart)
             {
                 var line = item.Name;
+                
                 if (item.Modifiers.Count > 0)
                 {
                     line += " + " + string.Join(", ", item.Modifiers.Select(m => m.Name));
                 }
+                
+                if (item.Addons.Count > 0)
+                {
+                    line += " + " + string.Join(", ", item.Addons.Select(a => $"{a.Quantity}x {a.AddonProductName}"));
+                }
+
                 line += $" - {item.TotalPrice:F2} THB";
                 lbCart.Items.Add(line);
                 _subtotal += item.TotalPrice;
@@ -223,11 +280,12 @@ namespace POS.Client.Views
                         ProductId = cartItem.ProductId,
                         ProductName = cartItem.Name,
                         Quantity = 1,
-                        UnitPrice = cartItem.TotalPrice,
+                        UnitPrice = cartItem.Price,
                         TotalPrice = cartItem.TotalPrice,
                         DiscountAmount = 0
                     };
 
+                    // Modifiers
                     if (cartItem.Modifiers.Count > 0)
                     {
                         item.Modifiers = new List<LocalSaleItemModifier>();
@@ -238,6 +296,24 @@ namespace POS.Client.Views
                                 ModifierOptionId = mod.OptionId,
                                 Quantity = 1,
                                 PriceAdjustment = mod.PriceAdjustment
+                            });
+                        }
+                    }
+
+                    // Addons
+                    if (cartItem.Addons.Count > 0)
+                    {
+                        item.Addons = new List<LocalSaleItemAddon>();
+                        foreach (var addon in cartItem.Addons)
+                        {
+                            item.Addons.Add(new LocalSaleItemAddon
+                            {
+                                AddonProductId = addon.AddonProductId,
+                                Quantity = addon.Quantity,
+                                QuantityValue = addon.QuantityValue,
+                                UnitPrice = addon.UnitPrice,
+                                TotalPrice = addon.TotalPrice,
+                                AddonProductName = addon.AddonProductName
                             });
                         }
                     }
@@ -283,8 +359,9 @@ namespace POS.Client.Views
             public decimal Price { get; set; }
             public decimal TaxRate { get; set; }
             public List<SelectedModifier> Modifiers { get; set; } = new();
+            public List<SelectedAddon> Addons { get; set; } = new();
 
-            public decimal TotalPrice => Price + Modifiers.Sum(m => m.PriceAdjustment);
+            public decimal TotalPrice => Price + Modifiers.Sum(m => m.PriceAdjustment) + Addons.Sum(a => a.TotalPrice);
         }
     }
 }

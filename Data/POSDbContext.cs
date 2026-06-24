@@ -24,25 +24,45 @@ namespace POS.Client.Data
             => options.UseSqlite($"Data Source={DbPath}");
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            modelBuilder.Entity<LocalSaleItem>()
-                .HasOne<LocalSale>()
-                .WithMany()
-                .HasForeignKey(i => i.LocalSaleId)
-                .OnDelete(DeleteBehavior.Cascade);
+{
+    // Esistenti
+    modelBuilder.Entity<LocalSaleItem>()
+        .HasOne<LocalSale>()
+        .WithMany()
+        .HasForeignKey(i => i.LocalSaleId)
+        .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<LocalPayment>()
-                .HasOne<LocalSale>()
-                .WithMany()
-                .HasForeignKey(p => p.LocalSaleId)
-                .OnDelete(DeleteBehavior.Cascade);
+    modelBuilder.Entity<LocalPayment>()
+        .HasOne<LocalSale>()
+        .WithMany()
+        .HasForeignKey(p => p.LocalSaleId)
+        .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<LocalSaleItemModifier>()
-                .HasOne<LocalSaleItem>()
-                .WithMany()
-                .HasForeignKey(m => m.LocalSaleItemId)
-                .OnDelete(DeleteBehavior.Cascade);
-        }
+    modelBuilder.Entity<LocalSaleItemModifier>()
+        .HasOne<LocalSaleItem>()
+        .WithMany()
+        .HasForeignKey(m => m.LocalSaleItemId)
+        .OnDelete(DeleteBehavior.Cascade);
+
+    // NUOVE - usa Restrict per evitare cicli
+    modelBuilder.Entity<LocalProductAddon>()
+        .HasOne<LocalProduct>()
+        .WithMany(p => p.Addons)
+        .HasForeignKey(a => a.ProductId)
+        .OnDelete(DeleteBehavior.Restrict);
+
+    modelBuilder.Entity<LocalProductAddonItem>()
+        .HasOne<LocalProductAddon>()
+        .WithMany(a => a.Items)
+        .HasForeignKey(i => i.AddonId)
+        .OnDelete(DeleteBehavior.Restrict);
+
+    modelBuilder.Entity<LocalSaleItemAddon>()
+        .HasOne<LocalSaleItem>()
+        .WithMany()
+        .HasForeignKey(a => a.LocalSaleItemId)
+        .OnDelete(DeleteBehavior.Cascade);
+}
 
         public DbSet<LocalProduct> Products { get; set; }
         public DbSet<LocalProductVariant> ProductVariants { get; set; }

@@ -188,13 +188,14 @@ namespace POS.Client.Services
         public int MaterialId { get; set; }
         public decimal Quantity { get; set; }
         public MaterialResponse Material { get; set; }
+        
     }
-
+    // Modifica MaterialResponse
     public class MaterialResponse
     {
         public int Id { get; set; }
         public string Name { get; set; }
-        public string Unit { get; set; }
+        public UnitResponse Unit { get; set; }  // <-- CHANGED: era string Unit
     }
 
     public class SaleResponse
@@ -243,5 +244,13 @@ namespace POS.Client.Services
         public decimal QuantityValue { get; set; }
         public int SortOrder { get; set; }
         public bool IsActive { get; set; }
+    }
+    // Aggiungi questa classe
+    public class UnitResponse
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+        public string Symbol { get; set; }
+        public string Type { get; set; }
     }
 }
